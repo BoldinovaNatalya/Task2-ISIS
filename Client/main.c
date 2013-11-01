@@ -3,17 +3,30 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <time.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+
 
 #define port 3425
 #define countOfStr 2
 #define countOfCh 50
+#define maxUserName 10
+#define maxPassword 16
+#define maxCommand 1024
 
-char message[countOfStr][countOfCh] = {"Would you like some tea?\n", "Would you like some coffee?\n"};
-char buf[1024];
+//char message[countOfCh] = "ls\n";
+//char buf[1024];
+int byte_reads;
 
 
 int main(void)
 {
+    char* userName = malloc(maxUserName);
+    char* password = malloc(maxPassword);
+    char* command = malloc(maxCommand);
+    char auth[50];
+
     int sock;
     struct sockaddr_in address;
 
@@ -25,24 +38,51 @@ int main(void)
     }
 
     address.sin_family = AF_INET;
-        address.sin_port = htons(port);
-        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        if(connect(sock, (struct sockaddr *)&address, sizeof(address)) < 0)
-        {
-            perror("connect");
-            exit(2);
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if(connect(sock, (struct sockaddr *)&address, sizeof(address)) < 0)
+    {
+        perror("connect");
+        exit(2);
+    }
+    printf("UserName:");
+    scanf("%s", userName);
+    printf("Password:");
+    scanf("%s", password);
+
+    strcpy(auth, "auth ");
+    strcat(auth, userName);
+    strcat(auth, " ");
+    strcat(auth, password);
+    char buf[1024];
+
+
+    send(sock, auth, strlen(auth), 0);
+    byte_reads = recv(sock, buf, sizeof(buf), 0);
+    if(strcmp(buf, "cor")) {
+        while(1) {
+            printf("Command:");
+            scanf("%s", command);
+            send(sock, command, strlen(command), 0);
+
+            while(1) {
+                memset(buf, 0, sizeof(buf));
+                byte_reads = recv(sock, buf, sizeof(buf), 0);
+                if(byte_reads==-1) {
+                    break;
+                } else {
+                    printf(buf);
+                    if (strstr(buf, "/")){
+                        break;
+                    }
+                }
+
+            }
         }
-        srand(time(NULL));
-        int r = rand();
-        int i = r%2;
-        send(sock, message[i], sizeof(message), 0);
-        printf(buf);
-        recv(sock, buf, sizeof(message), 0);
+    }
+    close(sock);
 
-        printf(message[i]);
 
-        printf(buf);
-        close(sock);
 
     return 0;
 }
