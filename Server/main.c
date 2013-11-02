@@ -17,6 +17,37 @@
 #define sizeOfBuf 1024
 #define MAX_NUMBER_OF_EVENTS 64
 
+void process_socket(int fd, char* buf) {
+    FILE *f;
+    char auth[100];
+    char* authResult;
+    char answer[sizeOfBuf];
+    char userPassword[sizeOfBuf];
+    if(strncmp(buf, "auth", 4)==0) {
+        f = fopen("UserPassword", "r");
+        while(fgets(userPassword, sizeof(userPassword), f)) {
+            strcpy(auth, "auth ");
+            strcat(auth, userPassword);
+            if(!strncmp(auth, buf, strlen(buf))) {
+                authResult = "cor";
+            } else {
+                authResult = "incor";
+            }
+        }
+        write(fd, authResult, strlen(authResult));
+    } else {
+        f = popen(buf, "r");
+        while(fgets(answer, sizeof(answer),f)) {
+            write(fd, answer, strlen(answer));
+        }
+
+        answer[0] = '/';
+        answer[1] = '\0';
+        write(fd, answer, strlen(answer));
+        pclose(f);
+    }
+}
+
 
 static int make_socket_non_blocking (int sfd)
 {
@@ -50,11 +81,8 @@ int main(void) {
 
     int sock, listener;
     struct sockaddr_in addr;
-    char buf[sizeOfBuf];
-    char answer[sizeOfBuf];
+    char buf[sizeOfBuf];   
     int bytes_read;
-
-    char userPassword[sizeOfBuf];
 
     listener = socket(AF_INET, SOCK_STREAM, 0);
     if(listener < 0)
@@ -140,7 +168,7 @@ int main(void) {
 
             } else {
                 int done = 0;
-                FILE *f;
+
 
                 memset(buf, 0, sizeof(buf));
                 while(1)
@@ -158,31 +186,7 @@ int main(void) {
                     }
                 }
                 if(!done) {
-                    char auth[100];
-                    char* authResult;
-                    if(strncmp(buf, "auth", 4)==0) {
-                        f = fopen("UserPassword", "r");
-                        while(fgets(userPassword, sizeof(userPassword), f)) {
-                            strcpy(auth, "auth ");
-                            strcat(auth, userPassword);
-                            if(!strncmp(auth, buf, strlen(buf))) {
-                                authResult = "cor";
-                            } else {
-                                authResult = "incor";
-                            }
-                        }
-                        send(events[i].data.fd, authResult, strlen(authResult), 0);
-                    } else {
-                        f = popen(buf, "r");
-                        while(fgets(answer, sizeof(answer),f)) {
-                            send(events[i].data.fd, answer, strlen(answer), 0);
-                        }
-
-                        answer[0] = '/';
-                        answer[1] = '\0';
-                        send(events[i].data.fd, answer, strlen(answer), 0);
-                        pclose(f);
-                    }
+                    process_socket(events[i].data.fd, buf);
                 }
             }
         }
