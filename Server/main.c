@@ -177,9 +177,10 @@ int main(void) {
                         while(fgets(answer, sizeof(answer),f)) {
                             send(events[i].data.fd, answer, strlen(answer), 0);
                         }
-                        char symbol[1];
-                        symbol[0] = '/';
-                        send(events[i].data.fd, symbol, strlen(symbol), 0);
+
+                        answer[0] = '/';
+                        answer[1] = '\0';
+                        send(events[i].data.fd, answer, strlen(answer), 0);
                         pclose(f);
                     }
                 }

@@ -59,8 +59,10 @@ int main(void)
 
     send(sock, auth, strlen(auth), 0);
     byte_reads = recv(sock, buf, sizeof(buf), 0);
+    //printf("%s", buf);
     if(strcmp(buf, "cor")) {
         while(1) {
+
             printf("Command:");
             scanf("%s", command);
             send(sock, command, strlen(command), 0);
@@ -72,7 +74,7 @@ int main(void)
                     break;
                 } else {
                     printf(buf);
-                    if (strstr(buf, "/")){
+                    if (strstr(buf, "/")!=NULL){
                         break;
                     }
                 }
