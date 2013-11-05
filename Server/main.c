@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/signal.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 
 
@@ -16,34 +18,48 @@
 #define port 3425
 #define sizeOfBuf 1024
 #define MAX_NUMBER_OF_EVENTS 64
+#define countOfChildren 1
 
-void process_socket(int fd, char* buf) {
+struct TaskStruct {
+    int socket;
+    char data[sizeOfBuf];
+};
+
+typedef struct TaskStruct* Task;
+
+void process_socket(int wd, Task task) {
     FILE *f;
     char auth[100];
     char* authResult;
-    char answer[sizeOfBuf];
+    //char answer[sizeOfBuf];
+    Task answer = (Task)malloc(sizeof(struct TaskStruct));;
     char userPassword[sizeOfBuf];
-    if(strncmp(buf, "auth", 4)==0) {
+    answer->socket = task->socket;
+    if(strncmp(task->data, "auth", 4)==0) {
         f = fopen("UserPassword", "r");
         while(fgets(userPassword, sizeof(userPassword), f)) {
             strcpy(auth, "auth ");
             strcat(auth, userPassword);
-            if(!strncmp(auth, buf, strlen(buf))) {
+            if(!strncmp(auth, task->data, strlen(task->data))) {
                 authResult = "cor";
             } else {
                 authResult = "incor";
             }
         }
-        write(fd, authResult, strlen(authResult));
+        strcpy(answer->data, authResult);
+        write(wd, answer, sizeof(struct TaskStruct));
+        printf("%d %s\n", answer->socket, answer->data);
     } else {
-        f = popen(buf, "r");
-        while(fgets(answer, sizeof(answer),f)) {
-            write(fd, answer, strlen(answer));
+        f = popen(task->data, "r");
+        while(fgets(answer->data, sizeof(answer->data),f)) {
+            printf("%d %s\n", answer->socket, answer->data);
+            write(wd, answer, sizeof(struct TaskStruct));
         }
 
-        answer[0] = '/';
-        answer[1] = '\0';
-        write(fd, answer, strlen(answer));
+        strcpy(answer->data, "/\0");
+
+        printf("%d %s\n", answer->socket, answer->data);
+        write(wd, answer, sizeof(struct TaskStruct));
         pclose(f);
     }
 }
@@ -125,6 +141,54 @@ int main(void) {
         exit(5);
     }
 
+    Task task = (Task)malloc(sizeof(struct TaskStruct));
+
+    mkfifo("fifo_in", S_IFIFO| 0666);
+    mkfifo("fifo_out", S_IFIFO| 0666);
+
+
+    int k;
+    int od, wd;
+    pid_t pids[countOfChildren];
+    int pid;
+    for(k = 0; k<=countOfChildren; k++) {
+        pid = fork();
+        if(pid ==0) {
+            char buf[sizeOfBuf];
+            char data[sizeOfBuf];
+            od = open("fifo_in", O_RDONLY);
+
+            wd = open("fifo_out", O_WRONLY);
+
+           while(1) {
+               read(od, task, sizeof(struct TaskStruct));
+               printf("42 %d %s\n",task->socket, task->data);
+
+               //write(wd, task, sizeof(struct TaskStruct));
+               process_socket(wd, task);
+            }
+        }
+        pids[k] = pid;
+    }
+
+
+
+
+
+
+    od = open("fifo_in", O_WRONLY);
+    wd = open("fifo_out", O_RDONLY);
+    make_socket_non_blocking(wd);
+    event.data.fd = wd;
+    event.events = EPOLLIN | EPOLLET;
+
+
+    s = epoll_ctl(efd, EPOLL_CTL_ADD, wd, &event);
+    if(s==-1) {
+        perror("epoll_ctl");
+        exit(5);
+    }
+
     while(1) {
         int active, i;
         active = epoll_wait(efd, events, MAX_NUMBER_OF_EVENTS, -1);
@@ -166,9 +230,9 @@ int main(void) {
                     }
                 }
 
-            } else {
+            } else if (wd != events[i].data.fd){
+                task->socket = events[i].data.fd;
                 int done = 0;
-
 
                 memset(buf, 0, sizeof(buf));
                 while(1)
@@ -186,8 +250,39 @@ int main(void) {
                     }
                 }
                 if(!done) {
-                    process_socket(events[i].data.fd, buf);
+                    //task->data = buf;
+                    strcpy(task->data, buf);
+                    int sockID = 1;
+                    printf("%d %s\n", task->socket, task->data);
+                    int r = write(od, task, sizeof(struct TaskStruct));
+                    printf("%d\n", r);
+                    //write(od, task->data, sizeof(task->data));
+                    //read(wd, task, sizeof(struct TaskStruct));
+
+                   // send(task->socket, task->data, strlen(task->data), 0);
+
+                    printf("%d %s\n", task->socket, task->data);
+
+                   // process_socket(events[i].data.fd, buf);
                 }
+            } else {
+                while(1)
+                {
+
+                    bytes_read = read(events[i].data.fd, task, sizeof(struct TaskStruct));
+                    if(bytes_read <= 0) {
+
+                        if(errno != EAGAIN) {
+                            close(events[i].data.fd);
+                        }
+                        break;
+                    } else {
+
+                         send(task->socket, task->data, strlen(task->data), 0);
+                    }
+
+                }
+
             }
         }
 
