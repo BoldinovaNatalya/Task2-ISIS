@@ -12,13 +12,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <sys/sem.h>
+#include <sys/ipc.h>
+
 
 
 
 #define port 3425
 #define sizeOfBuf 1024
 #define MAX_NUMBER_OF_EVENTS 64
-#define countOfChildren 1
+#define countOfChildren 4
 
 struct TaskStruct {
     int socket;
@@ -26,6 +29,20 @@ struct TaskStruct {
 };
 
 typedef struct TaskStruct* Task;
+
+union semun {
+    int val; /* used for SETVAL only */
+    struct semid_ds *buf; /* for IPC_STAT and IPC_SET */
+    ushort *array; /* used for GETALL and SETALL */
+};
+
+key_t key;
+int semid;
+union semun arg;
+struct sembuf sbLockRead = {0, -1, 0};
+struct sembuf sbUnlockRead = {0, 1, 0};
+struct sembuf sbLockWrite = {1, -1, 0};
+struct sembuf sbUnlockWrite = {1, 1, 0};
 
 void process_socket(int wd, Task task) {
     FILE *f;
@@ -46,11 +63,32 @@ void process_socket(int wd, Task task) {
                 authResult = "incor";
             }
         }
+        printf("beforelock %d\n",  semctl(semid, 0, GETVAL, arg));
         strcpy(answer->data, authResult);
+        //sb.sem_op = -1;
+        if (semop(semid, &sbLockWrite, 1) == -1) {
+            perror("semop");
+            exit(1);
+        }
+        printf("lock\n");
         write(wd, answer, sizeof(struct TaskStruct));
+
+        //sb.sem_op = 1;
+        if (semop(semid, &sbUnlockWrite, 1) == -1) {
+            perror("semop");
+            exit(1);
+        }
+
+
         printf("%d %s\n", answer->socket, answer->data);
     } else {
         f = popen(task->data, "r");
+
+        // sb.sem_op = -1;
+        if (semop(semid, &sbLockWrite, 1) == -1) {
+            perror("semop");
+            exit(1);
+        }
         while(fgets(answer->data, sizeof(answer->data),f)) {
             printf("%d %s\n", answer->socket, answer->data);
             write(wd, answer, sizeof(struct TaskStruct));
@@ -60,6 +98,14 @@ void process_socket(int wd, Task task) {
 
         printf("%d %s\n", answer->socket, answer->data);
         write(wd, answer, sizeof(struct TaskStruct));
+
+        if (semop(semid, &sbUnlockWrite, 1) == -1) {
+            perror("semop");
+            exit(1);
+        }
+
+
+
         pclose(f);
     }
 }
@@ -97,8 +143,34 @@ int main(void) {
 
     int sock, listener;
     struct sockaddr_in addr;
-    char buf[sizeOfBuf];   
+    char buf[sizeOfBuf];
     int bytes_read;
+
+    if(key = ftok("some", 'K')== -1) {
+        perror("ftok");
+        exit(1);
+    }
+
+    if(semid = semget(key, 2, 0666 | IPC_CREAT)==-1) {
+        perror("semget");
+        exit(2);
+    }
+
+    arg.val = 1;
+
+    if(semctl(semid, 0, SETVAL, arg) <0) {
+        perror("semctl");
+        exit(2);
+    }
+
+
+    arg.val = 1;
+    if(semctl(semid, 1, SETVAL, arg) <0) {
+        perror("semctl");
+        exit(2);
+    }
+    printf("after SETVAL %d\n", semctl(semid, 0, GETVAL, arg));
+
 
     listener = socket(AF_INET, SOCK_STREAM, 0);
     if(listener < 0)
@@ -159,13 +231,33 @@ int main(void) {
             od = open("fifo_in", O_RDONLY);
 
             wd = open("fifo_out", O_WRONLY);
+            printf("before readlock %d \n",  semctl(semid, 0, GETVAL, arg));
+            while(1) {
+                //sb.sem_op = -1;
+                if (semop(semid, &sbLockRead, 1) == -1) {
+                    perror("semop");
+                    exit(1);
+                }
 
-           while(1) {
-               read(od, task, sizeof(struct TaskStruct));
-               printf("42 %d %s\n",task->socket, task->data);
+                printf(" after readlock %d \n",  semctl(semid, 0, GETVAL, arg));
 
-               //write(wd, task, sizeof(struct TaskStruct));
-               process_socket(wd, task);
+                read(od, task, sizeof(struct TaskStruct));
+
+                //sb.sem_op = 1;
+
+                // printf("%d\n", sb.sem_op);
+                if (semop(semid, &sbUnlockRead, 1) == -1) {
+                    perror("semop");
+                    exit(1);
+                }
+                //sb.sem_op = -1;
+
+                printf(" before process socket lock %d\n",  semctl(semid, 0, GETVAL, arg));
+
+                printf("42 %d %s\n",task->socket, task->data);
+
+                //write(wd, task, sizeof(struct TaskStruct));
+                process_socket(wd, task);
             }
         }
         pids[k] = pid;
@@ -259,11 +351,11 @@ int main(void) {
                     //write(od, task->data, sizeof(task->data));
                     //read(wd, task, sizeof(struct TaskStruct));
 
-                   // send(task->socket, task->data, strlen(task->data), 0);
+                    // send(task->socket, task->data, strlen(task->data), 0);
 
                     printf("%d %s\n", task->socket, task->data);
 
-                   // process_socket(events[i].data.fd, buf);
+                    // process_socket(events[i].data.fd, buf);
                 }
             } else {
                 while(1)
@@ -278,7 +370,7 @@ int main(void) {
                         break;
                     } else {
 
-                         send(task->socket, task->data, strlen(task->data), 0);
+                        send(task->socket, task->data, strlen(task->data), 0);
                     }
 
                 }
