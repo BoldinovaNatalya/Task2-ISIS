@@ -233,7 +233,7 @@ int main(void) {
             wd = open("fifo_out", O_WRONLY);
             printf("before readlock %d \n",  semctl(semid, 0, GETVAL, arg));
             while(1) {
-                //sb.sem_op = -1;
+
                 if (semop(semid, &sbLockRead, 1) == -1) {
                     perror("semop");
                     exit(1);
@@ -243,30 +243,20 @@ int main(void) {
 
                 read(od, task, sizeof(struct TaskStruct));
 
-                //sb.sem_op = 1;
-
-                // printf("%d\n", sb.sem_op);
                 if (semop(semid, &sbUnlockRead, 1) == -1) {
                     perror("semop");
                     exit(1);
                 }
-                //sb.sem_op = -1;
 
                 printf(" before process socket lock %d\n",  semctl(semid, 0, GETVAL, arg));
 
                 printf("42 %d %s\n",task->socket, task->data);
 
-                //write(wd, task, sizeof(struct TaskStruct));
                 process_socket(wd, task);
             }
         }
         pids[k] = pid;
     }
-
-
-
-
-
 
     od = open("fifo_in", O_WRONLY);
     wd = open("fifo_out", O_RDONLY);
@@ -342,20 +332,15 @@ int main(void) {
                     }
                 }
                 if(!done) {
-                    //task->data = buf;
+                    printf("%s\n", buf);
                     strcpy(task->data, buf);
                     int sockID = 1;
                     printf("%d %s\n", task->socket, task->data);
                     int r = write(od, task, sizeof(struct TaskStruct));
                     printf("%d\n", r);
-                    //write(od, task->data, sizeof(task->data));
-                    //read(wd, task, sizeof(struct TaskStruct));
-
-                    // send(task->socket, task->data, strlen(task->data), 0);
 
                     printf("%d %s\n", task->socket, task->data);
 
-                    // process_socket(events[i].data.fd, buf);
                 }
             } else {
                 while(1)

@@ -15,8 +15,6 @@
 #define maxPassword 16
 #define maxCommand 1024
 
-//char message[countOfCh] = "ls\n";
-//char buf[1024];
 int byte_reads;
 
 
@@ -54,9 +52,8 @@ int main(void)
     strcat(auth, userName);
     strcat(auth, " ");
     strcat(auth, password);
+
     char buf[1024];
-
-
     send(sock, auth, strlen(auth), 0);
     byte_reads = recv(sock, buf, sizeof(buf), 0);
     //printf("%s", buf);
@@ -64,8 +61,8 @@ int main(void)
         while(1) {
 
             printf("Command:");
-            scanf("%s", command);
-            send(sock, command, strlen(command), 0);
+            fgets(buf, sizeof(buf), stdin);
+            send(sock, buf, strlen(buf), 0);
 
             while(1) {
                 memset(buf, 0, sizeof(buf));
